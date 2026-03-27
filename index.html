@@ -10,8 +10,7 @@
 </style>
 </head>
 <body>
-  <img src="Lol.png">
-<div id="ui">Arrow keys to move | Touch 🔴 to clear | Avoid ☠️ | Every 10s enemies dash!</div>
+<div id="ui">Arrow keys to move | 🔴 = destroyable | ☠️ = deadly (chases + dashes every 10s)</div>
 <canvas id="game"></canvas>
 
 <script>
@@ -22,23 +21,23 @@ canvas.height = window.innerHeight;
 
 let cat = { x: canvas.width/2, y: canvas.height/2, size: 40, angle: 0, speed: 4, alive: true };
 let keys = {};
-let enemies = [];
-let hazards = [];
+let enemies = []; // 🔴 harmless (removed on touch)
+let skulls = [];  // ☠️ deadly
 let lastDash = Date.now();
 
 // Controls
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
 
-// Spawn enemies (they will chase)
+// Spawn harmless enemies
 setInterval(() => {
-  enemies.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: 30, vx: 0, vy: 0, dash: false });
+  enemies.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: 30 });
 }, 1500);
 
-// Spawn hazards
+// Spawn skull enemies (deadly)
 setInterval(() => {
-  hazards.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: 25 });
-}, 3000);
+  skulls.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: 28, vx: 0, vy: 0, dash: false, charging: false });
+}, 2500);
 
 function update() {
   if (!cat.alive) return;
@@ -51,60 +50,60 @@ function update() {
 
   cat.angle += 0.1;
 
-  // Enemy movement (slow chase)
-  enemies.forEach(e => {
-    if (!e.dash) {
-      let dx = cat.x - e.x;
-      let dy = cat.y - e.y;
-      let dist = Math.sqrt(dx*dx + dy*dy);
-      let speed = 1.2;
-      e.vx = (dx/dist) * speed;
-      e.vy = (dy/dist) * speed;
-    }
-    e.x += e.vx;
-    e.y += e.vy;
+  // Remove harmless enemies on touch
+  enemies = enemies.filter(e => {
+    let dx = cat.x - e.x;
+    let dy = cat.y - e.y;
+    return Math.hypot(dx, dy) > cat.size;
   });
 
-  // Every 10 seconds → DASH attack
-  if (Date.now() - lastDash > 10000) {
-    enemies.forEach(e => {
-      let dx = cat.x - e.x;
-      let dy = cat.y - e.y;
-      let dist = Math.sqrt(dx*dx + dy*dy);
-      let dashSpeed = 6;
-      e.vx = (dx/dist) * dashSpeed;
-      e.vy = (dy/dist) * dashSpeed;
-      e.dash = true;
+  // Skull behavior (CHASE)
+  skulls.forEach(s => {
+    if (!s.dash) {
+      let dx = cat.x - s.x;
+      let dy = cat.y - s.y;
+      let dist = Math.hypot(dx, dy);
+      let speed = 1.5;
+      s.vx = (dx/dist) * speed;
+      s.vy = (dy/dist) * speed;
+      s.x += s.vx;
+      s.y += s.vy;
+    } else {
+      s.x += s.vx;
+      s.y += s.vy;
+    }
+  });
 
-      // Reset dash after short time
-      setTimeout(() => { e.dash = false; }, 1000);
+  // Charging phase before dash (last 2 seconds of timer)
+  let elapsed = (Date.now() - lastDash) / 1000;
+  let timeLeft = 10 - Math.floor(elapsed);
+
+  skulls.forEach(s => {
+    s.charging = (timeLeft <= 2);
+  });
+
+  // DASH every 10 seconds
+  if (Date.now() - lastDash > 10000) {
+    skulls.forEach(s => {
+      let dx = cat.x - s.x;
+      let dy = cat.y - s.y;
+      let dist = Math.hypot(dx, dy);
+      let dashSpeed = 7;
+      s.vx = (dx/dist) * dashSpeed;
+      s.vy = (dy/dist) * dashSpeed;
+      s.dash = true;
+
+      setTimeout(() => { s.dash = false; }, 1000);
     });
     lastDash = Date.now();
   }
 
-  // Kill enemies if touched
-  enemies = enemies.filter(e => {
-    let dx = cat.x - e.x;
-    let dy = cat.y - e.y;
-    let dist = Math.sqrt(dx*dx + dy*dy);
-    return dist > cat.size;
-  });
-
-  // Hazards kill player
-  hazards.forEach(h => {
-    let dx = cat.x - h.x;
-    let dy = cat.y - h.y;
-    let dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < cat.size) cat.alive = false;
-  });
-
-  // Enemies kill player ONLY during dash
-  enemies.forEach(e => {
-    if (e.dash) {
-      let dx = cat.x - e.x;
-      let dy = cat.y - e.y;
-      let dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < cat.size) cat.alive = false;
+  // Skull kills player on contact (especially during dash)
+  skulls.forEach(s => {
+    let dx = cat.x - s.x;
+    let dy = cat.y - s.y;
+    if (Math.hypot(dx, dy) < cat.size) {
+      cat.alive = false;
     }
   });
 }
@@ -120,46 +119,9 @@ function drawCat() {
   ctx.restore();
 }
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (cat.alive) drawCat();
-
-  // Enemies
-  enemies.forEach(e => {
-    ctx.font = "30px Arial";
-    ctx.fillText(e.dash ? "⚡" : "🔴", e.x, e.y);
-  });
-
-  // Hazards
-  hazards.forEach(h => {
-    ctx.font = "25px Arial";
-    ctx.fillText("☠️", h.x, h.y);
-  });
-
-  // Timer display
-  let timeLeft = Math.max(0, 10 - Math.floor((Date.now() - lastDash)/1000));
-  ctx.font = "20px Arial";
-  ctx.fillText("Dash in: " + timeLeft + "s", 20, 50);
-
-  if (!cat.alive) {
-    ctx.font = "50px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("💀 Game Over 💀", canvas.width/2, canvas.height/2 - 40);
-    ctx.font = "30px Arial";
-    ctx.fillText("The cat has fainted!", canvas.width/2, canvas.height/2 + 10);
-    ctx.font = "60px Arial";
-    ctx.fillText("😵", canvas.width/2, canvas.height/2 + 80);
-  }
-}
-
-function gameLoop() {
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
-}
-
-gameLoop();
+// Load death image
+const pepeImg = new Image();
+pepeImg.src = "Lol.png";
 </script>
 </body>
 </html>
